@@ -1,16 +1,17 @@
 # TwinInvoice
 
-TwinInvoice is a lightweight browser tool for merging invoice PDFs and images into A4 print pages. It places two suitable invoice pages on one sheet and automatically prints taller pages on their own sheet.
+TwinInvoice 是一个轻量的浏览器发票合并打印工具，可将 PDF 和图片发票自动排版到 A4 页面中。适合二合一的发票会放在同一张 A4 纸上，高度不适合的发票会自动单独占用一张 A4。
 
-## Features
+## 功能
 
-- Import a whole folder of PDF, PNG, JPG, JPEG, or WEBP invoices.
-- Recursively reads files from subfolders.
-- Sorts invoice files by path before rendering.
-- Combines two suitable invoice pages onto one A4 sheet.
-- Keeps oversized/tall invoice pages on a separate A4 sheet.
-- Runs locally in the browser with bundled PDF.js.
+- 支持导入整个发票文件夹。
+- 支持递归读取子文件夹。
+- 支持 PDF、PNG、JPG、JPEG、WEBP 文件。
+- 按文件路径排序后生成打印预览。
+- 自动将两张适合的发票合并到一张 A4 纸。
+- 自动将过高或不适合二合一的发票单独排版。
+- 使用本地 PDF.js，在浏览器中直接运行。
 
-## Usage
+## 使用方式
 
-Open `invoice-print.html` in a browser, drag an invoice folder into the page, review the generated A4 preview, then click print.
+用浏览器打开 `invoice-print.html`，把发票文件夹拖到页面中，确认生成的 A4 打印预览后点击打印。
