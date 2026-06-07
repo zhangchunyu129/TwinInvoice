@@ -94,7 +94,15 @@
       font-size: 16px;
     }
 
-    .drop span,
+    .import-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .import-copy,
     .hint,
     .meta,
     .file-row small {
@@ -295,12 +303,17 @@
   <main class="app">
     <aside class="side">
       <h1>发票合并打印</h1>
-      <div class="drop" id="dropZone" role="button" tabindex="0">
-        <span>
-          <strong>点击选择发票文件夹</strong>
-          会递归读取子文件夹里的 PDF、PNG、JPG、WEBP。
-        </span>
+      <div class="drop" id="dropZone">
+        <div class="import-copy">
+          <strong>选择发票文件或文件夹</strong>
+          支持 PDF、PNG、JPG、WEBP；选择文件夹时会递归读取子文件夹。
+          <div class="import-actions">
+            <button id="fileSelectBtn" type="button">选择文件</button>
+            <button id="folderSelectBtn" class="secondary" type="button">选择文件夹</button>
+          </div>
+        </div>
       </div>
+      <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple hidden>
       <input id="folderInput" type="file" webkitdirectory multiple hidden>
 
       <div class="toolbar">
@@ -308,7 +321,7 @@
         <button id="clearBtn" class="secondary" disabled>清空</button>
       </div>
 
-      <div class="status" id="status">等待导入文件夹。</div>
+      <div class="status" id="status">等待导入文件或文件夹。</div>
 
       <div class="stats">
         <div class="stat"><b id="fileCount">0</b><span>文件</span></div>
@@ -337,6 +350,9 @@
     const SUPPORTED = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
 
     const dropZone = document.getElementById("dropZone");
+    const fileSelectBtn = document.getElementById("fileSelectBtn");
+    const folderSelectBtn = document.getElementById("folderSelectBtn");
+    const fileInput = document.getElementById("fileInput");
     const folderInput = document.getElementById("folderInput");
     const printBtn = document.getElementById("printBtn");
     const clearBtn = document.getElementById("clearBtn");
@@ -351,13 +367,9 @@
     let objectUrls = [];
     let invoicePages = [];
 
-    dropZone.addEventListener("click", () => folderInput.click());
-    dropZone.addEventListener("keydown", event => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        folderInput.click();
-      }
-    });
+    fileSelectBtn.addEventListener("click", () => fileInput.click());
+    folderSelectBtn.addEventListener("click", () => folderInput.click());
+    fileInput.addEventListener("change", () => processFiles([...fileInput.files]));
     folderInput.addEventListener("change", () => processFiles([...folderInput.files]));
 
     dropZone.addEventListener("dragover", event => {
@@ -604,6 +616,7 @@
 
       objectUrls = [];
       invoicePages = [];
+      fileInput.value = "";
       folderInput.value = "";
       pagesEl.innerHTML = '<div class="empty">导入后会在这里生成 A4 打印预览。</div>';
       fileListEl.innerHTML = "";
@@ -612,7 +625,7 @@
       warnCountEl.textContent = "0";
       printBtn.disabled = true;
       clearBtn.disabled = true;
-      statusEl.textContent = "等待导入文件夹。";
+      statusEl.textContent = "等待导入文件或文件夹。";
     }
 
     function extensionOf(name) {
