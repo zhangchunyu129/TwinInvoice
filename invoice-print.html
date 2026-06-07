@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>发票二合一打印</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      color-scheme: light;
+      --ink: #18212f;
+      --muted: #617084;
+      --line: #d8dee8;
+      --panel: #f6f8fb;
+      --accent: #1b6ef3;
+      --warn: #b45309;
+      --bad: #b42318;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #eef2f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button {
+      height: 36px;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 0 14px;
+      color: #fff;
+      background: var(--accent);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--ink);
+      border-color: var(--line);
+      background: #fff;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      min-height: 100vh;
+    }
+
+    .side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 18px;
+      overflow: auto;
+      background: #fff;
+      border-right: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 20px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .drop {
+      display: grid;
+      place-items: center;
+      min-height: 158px;
+      padding: 18px;
+      border: 2px dashed #9aa8bb;
+      border-radius: 8px;
+      background: var(--panel);
+      text-align: center;
+    }
+
+    .drop.dragover {
+      border-color: var(--accent);
+      background: #edf4ff;
+    }
+
+    .drop strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .drop span,
+    .hint,
+    .meta,
+    .file-row small {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .status {
+      min-height: 22px;
+      margin: 8px 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .stat {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .files {
+      margin-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .file-row {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .file-row b {
+      display: block;
+      overflow-wrap: anywhere;
+      font-weight: 600;
+    }
+
+    .file-row.warn b {
+      color: var(--warn);
+    }
+
+    .file-row.bad b {
+      color: var(--bad);
+    }
+
+    .workspace {
+      padding: 22px;
+      overflow: auto;
+    }
+
+    .pages {
+      display: grid;
+      gap: 18px;
+      justify-content: center;
+    }
+
+    .sheet {
+      width: 210mm;
+      height: 297mm;
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      background: #fff;
+      box-shadow: 0 8px 28px rgba(24, 33, 47, .14);
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .sheet.single {
+      grid-template-rows: 1fr;
+    }
+
+    .slot {
+      position: relative;
+      display: grid;
+      place-items: center;
+      padding: 8mm;
+      overflow: hidden;
+      border-bottom: 1px dashed #c4ccd8;
+    }
+
+    .sheet.single .slot,
+    .slot:last-child {
+      border-bottom: 0;
+    }
+
+    .slot img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .badge {
+      position: absolute;
+      left: 8mm;
+      top: 5mm;
+      max-width: calc(100% - 16mm);
+      padding: 4px 7px;
+      border-radius: 5px;
+      color: #fff;
+      background: rgba(180, 83, 9, .92);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 920px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .side {
+        position: static;
+        height: auto;
+      }
+
+      .workspace {
+        padding: 14px;
+      }
+
+      .sheet {
+        width: min(100%, 210mm);
+        height: auto;
+        aspect-ratio: 210 / 297;
+      }
+    }
+
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      .side {
+        display: none;
+      }
+
+      .app {
+        display: block;
+      }
+
+      .workspace {
+        padding: 0;
+        overflow: visible;
+      }
+
+      .pages {
+        display: block;
+      }
+
+      .sheet {
+        width: 210mm;
+        height: 297mm;
+        box-shadow: none;
+      }
+
+      .badge {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="side">
+      <h1>发票合并打印</h1>
+      <div class="drop" id="dropZone" role="button" tabindex="0">
+        <span>
+          <strong>把发票文件夹拖到这里</strong>
+          或点击选择文件夹。会递归读取子文件夹里的 PDF、PNG、JPG、WEBP。
+        </span>
+      </div>
+      <input id="folderInput" type="file" webkitdirectory multiple hidden>
+
+      <div class="toolbar">
+        <button id="printBtn" disabled>打印</button>
+        <button id="clearBtn" class="secondary" disabled>清空</button>
+      </div>
+
+      <div class="status" id="status">等待导入文件夹。</div>
+
+      <div class="stats">
+        <div class="stat"><b id="fileCount">0</b><span>文件</span></div>
+        <div class="stat"><b id="pageCount">0</b><span>发票页</span></div>
+        <div class="stat"><b id="warnCount">0</b><span>单页</span></div>
+      </div>
+
+      <div class="hint">
+        规则：页面按宽度铺进半张 A4 时，如果高度会超过半张 A4，就判定为不适合二合一，自动单独占一张 A4。
+      </div>
+
+      <section class="files" id="fileList"></section>
+    </aside>
+
+    <section class="workspace">
+      <div class="pages" id="pages">
+        <div class="empty">导入后会在这里生成 A4 打印预览。</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./vendor/pdfjs/pdf.min.js"></script>
+  <script>
+    const PDFJS_WORKER_URL = "./vendor/pdfjs/pdf.worker.min.js";
+    const HALF_A4_RATIO = 210 / (297 / 2);
+    const SUPPORTED = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
+
+    const dropZone = document.getElementById("dropZone");
+    const folderInput = document.getElementById("folderInput");
+    const printBtn = document.getElementById("printBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const statusEl = document.getElementById("status");
+    const pagesEl = document.getElementById("pages");
+    const fileListEl = document.getElementById("fileList");
+    const fileCountEl = document.getElementById("fileCount");
+    const pageCountEl = document.getElementById("pageCount");
+    const warnCountEl = document.getElementById("warnCount");
+
+    let pdfjsLibPromise = null;
+    let objectUrls = [];
+    let invoicePages = [];
+
+    dropZone.addEventListener("click", () => folderInput.click());
+    dropZone.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        folderInput.click();
+      }
+    });
+    folderInput.addEventListener("change", () => processFiles([...folderInput.files]));
+
+    dropZone.addEventListener("dragover", event => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.classList.remove("dragover");
+    });
+
+    dropZone.addEventListener("drop", async event => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+
+      const files = await readDroppedItems(event.dataTransfer);
+      processFiles(files);
+    });
+
+    printBtn.addEventListener("click", () => window.print());
+    clearBtn.addEventListener("click", reset);
+
+    async function loadPdfJs() {
+      if (!pdfjsLibPromise) {
+        const pdfjs = window.pdfjsLib || window["pdfjs-dist/build/pdf"];
+        if (!pdfjs) {
+          throw new Error("PDF 解析库加载失败，请确认 vendor/pdfjs 文件夹和本页面放在一起");
+        }
+        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+        pdfjsLibPromise = Promise.resolve(pdfjs);
+      }
+
+      return pdfjsLibPromise;
+    }
+
+    async function readDroppedItems(dataTransfer) {
+      const entries = [...dataTransfer.items]
+        .map(item => item.webkitGetAsEntry && item.webkitGetAsEntry())
+        .filter(Boolean);
+
+      if (!entries.length) {
+        return [...dataTransfer.files];
+      }
+
+      const files = [];
+      for (const entry of entries) {
+        await walkEntry(entry, files);
+      }
+      return files;
+    }
+
+    async function walkEntry(entry, files) {
+      if (entry.isFile) {
+        const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+        file.relativePath = entry.fullPath.replace(/^\/+/, "");
+        files.push(file);
+        return;
+      }
+
+      if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch = [];
+        do {
+          batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+          for (const child of batch) {
+            await walkEntry(child, files);
+          }
+        } while (batch.length);
+      }
+    }
+
+    async function processFiles(files) {
+      reset();
+
+      const invoiceFiles = files
+        .filter(file => SUPPORTED.has(extensionOf(file.name)))
+        .sort((a, b) => displayPath(a).localeCompare(displayPath(b), "zh-CN", { numeric: true }));
+
+      if (!invoiceFiles.length) {
+        statusEl.textContent = "没有找到 PDF 或图片发票。";
+        return;
+      }
+
+      clearBtn.disabled = false;
+      fileCountEl.textContent = invoiceFiles.length;
+      statusEl.textContent = `正在处理 ${invoiceFiles.length} 个文件...`;
+
+      const rows = invoiceFiles.map(file => appendFileRow(file, "等待处理"));
+
+      for (let i = 0; i < invoiceFiles.length; i++) {
+        const file = invoiceFiles[i];
+        rows[i].querySelector("small").textContent = "处理中";
+        statusEl.textContent = `正在处理 ${i + 1}/${invoiceFiles.length}：${displayPath(file)}`;
+
+        try {
+          const pages = await renderFile(file);
+          invoicePages.push(...pages);
+          rows[i].querySelector("small").textContent = `${pages.length} 页`;
+          if (pages.some(page => page.single)) {
+            rows[i].classList.add("warn");
+          }
+        } catch (error) {
+          rows[i].classList.add("bad");
+          rows[i].querySelector("small").textContent = `失败：${error.message}`;
+        }
+
+        pageCountEl.textContent = invoicePages.length;
+        warnCountEl.textContent = invoicePages.filter(page => page.single).length;
+      }
+
+      renderPrintPages(invoicePages);
+      printBtn.disabled = invoicePages.length === 0;
+      statusEl.textContent = invoicePages.length
+        ? `完成：${invoicePages.length} 页发票，${invoicePages.filter(page => page.single).length} 页自动单独打印。`
+        : "没有可打印的发票页。";
+    }
+
+    function appendFileRow(file, state) {
+      const row = document.createElement("div");
+      row.className = "file-row";
+      row.innerHTML = `<b></b><small></small>`;
+      row.querySelector("b").textContent = displayPath(file);
+      row.querySelector("small").textContent = state;
+      fileListEl.append(row);
+      return row;
+    }
+
+    async function renderFile(file) {
+      if (extensionOf(file.name) === "pdf") {
+        return renderPdf(file);
+      }
+      return [await renderImage(file, displayPath(file))];
+    }
+
+    async function renderPdf(file) {
+      const pdfjsLib = await loadPdfJs();
+      const buffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      const pages = [];
+
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+
+        await page.render({ canvasContext: context, viewport }).promise;
+
+        const url = canvas.toDataURL("image/png");
+        pages.push(makePage(url, canvas.width, canvas.height, `${displayPath(file)} 第 ${pageNumber} 页`));
+      }
+
+      return pages;
+    }
+
+    async function renderImage(file, label) {
+      const url = URL.createObjectURL(file);
+      objectUrls.push(url);
+
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return makePage(url, img.naturalWidth, img.naturalHeight, label);
+    }
+
+    function makePage(url, width, height, label) {
+      const ratio = width / height;
+      return {
+        url,
+        width,
+        height,
+        label,
+        single: ratio < HALF_A4_RATIO
+      };
+    }
+
+    function renderPrintPages(pages) {
+      pagesEl.innerHTML = "";
+      const queue = [];
+
+      for (const page of pages) {
+        if (page.single) {
+          flushPair(queue);
+          appendSheet([page], true);
+        } else {
+          queue.push(page);
+          if (queue.length === 2) {
+            flushPair(queue);
+          }
+        }
+      }
+
+      flushPair(queue);
+
+      if (!pages.length) {
+        pagesEl.innerHTML = '<div class="empty">没有可打印的发票页。</div>';
+      }
+    }
+
+    function flushPair(queue) {
+      if (!queue.length) return;
+      appendSheet(queue.splice(0, 2), false);
+    }
+
+    function appendSheet(items, single) {
+      const sheet = document.createElement("article");
+      sheet.className = single ? "sheet single" : "sheet";
+
+      for (const item of items) {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.label;
+        slot.append(img);
+
+        if (item.single) {
+          const badge = document.createElement("div");
+          badge.className = "badge";
+          badge.textContent = "高度不适合二合一，已单独排版";
+          slot.append(badge);
+        }
+
+        sheet.append(slot);
+      }
+
+      if (!single && items.length === 1) {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        slot.innerHTML = '<span class="empty">空白</span>';
+        sheet.append(slot);
+      }
+
+      pagesEl.append(sheet);
+    }
+
+    function reset() {
+      for (const url of objectUrls) {
+        URL.revokeObjectURL(url);
+      }
+
+      objectUrls = [];
+      invoicePages = [];
+      folderInput.value = "";
+      pagesEl.innerHTML = '<div class="empty">导入后会在这里生成 A4 打印预览。</div>';
+      fileListEl.innerHTML = "";
+      fileCountEl.textContent = "0";
+      pageCountEl.textContent = "0";
+      warnCountEl.textContent = "0";
+      printBtn.disabled = true;
+      clearBtn.disabled = true;
+      statusEl.textContent = "等待导入文件夹。";
+    }
+
+    function extensionOf(name) {
+      return name.split(".").pop().toLowerCase();
+    }
+
+    function displayPath(file) {
+      return file.webkitRelativePath || file.relativePath || file.name;
+    }
+  </script>
+</body>
+</html>
