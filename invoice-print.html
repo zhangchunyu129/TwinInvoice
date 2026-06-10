@@ -113,6 +113,8 @@
 
     .toolbar {
       display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 8px;
       margin: 14px 0;
     }
@@ -186,6 +188,7 @@
     }
 
     .sheet {
+      position: relative;
       width: 210mm;
       height: 297mm;
       display: grid;
@@ -196,8 +199,37 @@
       break-after: page;
     }
 
+    .sheet:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+
     .sheet.single {
       grid-template-rows: 1fr;
+    }
+
+    .sheet-select {
+      position: absolute;
+      z-index: 1;
+      right: 6mm;
+      top: 6mm;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .94);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .sheet-select input {
+      margin: 0;
+    }
+
+    .sheet.excluded .slot {
+      opacity: .35;
     }
 
     .slot {
@@ -293,6 +325,11 @@
         box-shadow: none;
       }
 
+      .sheet.excluded,
+      .sheet-select {
+        display: none;
+      }
+
       .badge {
         display: none;
       }
@@ -319,6 +356,7 @@
       <div class="toolbar">
         <button id="printBtn" disabled>打印</button>
         <button id="clearBtn" class="secondary" disabled>清空</button>
+        <button id="downloadBtn" class="secondary" disabled>下载</button>
       </div>
 
       <div class="status" id="status">等待导入文件或文件夹。</div>
@@ -347,6 +385,10 @@
   <script>
     const PDFJS_WORKER_URL = "./vendor/pdfjs/pdf.worker.min.js";
     const HALF_A4_RATIO = 210 / (297 / 2);
+    const A4_WIDTH_PT = 595.28;
+    const A4_HEIGHT_PT = 841.89;
+    const PDF_CANVAS_WIDTH = 1240;
+    const PDF_CANVAS_HEIGHT = 1754;
     const SUPPORTED = new Set(["pdf", "png", "jpg", "jpeg", "webp"]);
 
     const dropZone = document.getElementById("dropZone");
@@ -356,6 +398,7 @@
     const folderInput = document.getElementById("folderInput");
     const printBtn = document.getElementById("printBtn");
     const clearBtn = document.getElementById("clearBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
     const statusEl = document.getElementById("status");
     const pagesEl = document.getElementById("pages");
     const fileListEl = document.getElementById("fileList");
@@ -364,8 +407,8 @@
     const warnCountEl = document.getElementById("warnCount");
 
     let pdfjsLibPromise = null;
-    let objectUrls = [];
     let invoicePages = [];
+    let printSheets = [];
 
     fileSelectBtn.addEventListener("click", () => fileInput.click());
     folderSelectBtn.addEventListener("click", () => folderInput.click());
@@ -391,6 +434,7 @@
 
     printBtn.addEventListener("click", () => window.print());
     clearBtn.addEventListener("click", reset);
+    downloadBtn.addEventListener("click", downloadPreview);
 
     async function loadPdfJs() {
       if (!pdfjsLibPromise) {
@@ -482,6 +526,7 @@
 
       renderPrintPages(invoicePages);
       printBtn.disabled = invoicePages.length === 0;
+      downloadBtn.disabled = invoicePages.length === 0;
       statusEl.textContent = invoicePages.length
         ? `完成：${invoicePages.length} 页发票，${invoicePages.filter(page => page.single).length} 页自动单独打印。`
         : "没有可打印的发票页。";
@@ -528,13 +573,21 @@
     }
 
     async function renderImage(file, label) {
-      const url = URL.createObjectURL(file);
-      objectUrls.push(url);
+      const url = await readAsDataUrl(file);
 
       const img = new Image();
       img.src = url;
       await img.decode();
       return makePage(url, img.naturalWidth, img.naturalHeight, label);
+    }
+
+    function readAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("图片读取失败"));
+        reader.readAsDataURL(file);
+      });
     }
 
     function makePage(url, width, height, label) {
@@ -550,35 +603,34 @@
 
     function renderPrintPages(pages) {
       pagesEl.innerHTML = "";
-      const queue = [];
+      printSheets = makeSheets(pages).map(sheet => ({ ...sheet, selected: true }));
 
-      for (const page of pages) {
-        if (page.single) {
-          flushPair(queue);
-          appendSheet([page], true);
-        } else {
-          queue.push(page);
-          if (queue.length === 2) {
-            flushPair(queue);
-          }
-        }
+      for (let index = 0; index < printSheets.length; index++) {
+        appendSheet(printSheets[index], index);
       }
-
-      flushPair(queue);
 
       if (!pages.length) {
         pagesEl.innerHTML = '<div class="empty">没有可打印的发票页。</div>';
       }
     }
 
-    function flushPair(queue) {
-      if (!queue.length) return;
-      appendSheet(queue.splice(0, 2), false);
-    }
-
-    function appendSheet(items, single) {
+    function appendSheet(sheetData, index) {
+      const { items, single } = sheetData;
       const sheet = document.createElement("article");
       sheet.className = single ? "sheet single" : "sheet";
+
+      const selectLabel = document.createElement("label");
+      selectLabel.className = "sheet-select";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = true;
+      checkbox.addEventListener("change", () => {
+        sheetData.selected = checkbox.checked;
+        sheet.classList.toggle("excluded", !checkbox.checked);
+        updateSelectionState();
+      });
+      selectLabel.append(checkbox, `选择第 ${index + 1} 页`);
+      sheet.append(selectLabel);
 
       for (const item of items) {
         const slot = document.createElement("div");
@@ -602,7 +654,6 @@
       if (!single && items.length === 1) {
         const slot = document.createElement("div");
         slot.className = "slot";
-        slot.innerHTML = '<span class="empty">空白</span>';
         sheet.append(slot);
       }
 
@@ -610,12 +661,8 @@
     }
 
     function reset() {
-      for (const url of objectUrls) {
-        URL.revokeObjectURL(url);
-      }
-
-      objectUrls = [];
       invoicePages = [];
+      printSheets = [];
       fileInput.value = "";
       folderInput.value = "";
       pagesEl.innerHTML = '<div class="empty">导入后会在这里生成 A4 打印预览。</div>';
@@ -625,7 +672,225 @@
       warnCountEl.textContent = "0";
       printBtn.disabled = true;
       clearBtn.disabled = true;
+      downloadBtn.disabled = true;
       statusEl.textContent = "等待导入文件或文件夹。";
+    }
+
+    async function downloadPreview() {
+      const sheets = printSheets.filter(sheet => sheet.selected);
+      if (!sheets.length) return;
+
+      downloadBtn.disabled = true;
+      statusEl.textContent = "正在生成 PDF...";
+
+      try {
+        const pageImages = [];
+
+        for (const sheet of sheets) {
+          pageImages.push(await renderPdfPageImage(sheet));
+        }
+
+        const blob = new Blob([buildPdf(pageImages)], { type: "application/pdf" });
+        saveBlob(blob, "发票合并打印.pdf");
+        statusEl.textContent = `完成：已生成 ${sheets.length} 页 PDF。`;
+      } catch (error) {
+        statusEl.textContent = `下载失败：${error.message}`;
+      } finally {
+        updateSelectionState();
+      }
+    }
+
+    function updateSelectionState() {
+      const selectedCount = printSheets.filter(sheet => sheet.selected).length;
+      printBtn.disabled = selectedCount === 0;
+      downloadBtn.disabled = selectedCount === 0;
+      statusEl.textContent = selectedCount
+        ? `已选择 ${selectedCount}/${printSheets.length} 张 A4 页。`
+        : "未选择要打印或下载的 A4 页。";
+    }
+
+    function makeSheets(pages) {
+      const sheets = [];
+      const queue = [];
+      const pendingSingles = [];
+
+      for (const page of pages) {
+        if (page.single) {
+          if (queue.length) {
+            pendingSingles.push(page);
+          } else {
+            sheets.push({ items: [page], single: true });
+          }
+        } else {
+          queue.push(page);
+          if (queue.length === 2) {
+            flushDownloadPair(sheets, queue);
+            for (const pending of pendingSingles.splice(0)) {
+              sheets.push({ items: [pending], single: true });
+            }
+          }
+        }
+      }
+
+      for (const pending of pendingSingles) {
+        sheets.push({ items: [pending], single: true });
+      }
+      flushDownloadPair(sheets, queue);
+      return sheets;
+    }
+
+    function flushDownloadPair(sheets, queue) {
+      if (!queue.length) return;
+      sheets.push({ items: queue.splice(0, 2), single: false });
+    }
+
+    async function renderPdfPageImage(sheet) {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      canvas.width = PDF_CANVAS_WIDTH;
+      canvas.height = PDF_CANVAS_HEIGHT;
+
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      const slotHeight = sheet.single ? canvas.height : canvas.height / 2;
+
+      for (let index = 0; index < sheet.items.length; index++) {
+        const item = sheet.items[index];
+        const image = await loadImage(item.url);
+        const padding = Math.round(canvas.width * (8 / 210));
+        const x = padding;
+        const y = index * slotHeight + padding;
+        const width = canvas.width - padding * 2;
+        const height = slotHeight - padding * 2;
+        const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+        const imageWidth = image.naturalWidth * scale;
+        const imageHeight = image.naturalHeight * scale;
+
+        context.drawImage(
+          image,
+          x + (width - imageWidth) / 2,
+          y + (height - imageHeight) / 2,
+          imageWidth,
+          imageHeight
+        );
+      }
+
+      if (!sheet.single) {
+        context.setLineDash([8, 8]);
+        context.strokeStyle = "#c4ccd8";
+        context.beginPath();
+        context.moveTo(0, slotHeight);
+        context.lineTo(canvas.width, slotHeight);
+        context.stroke();
+      }
+
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        bytes: dataUrlToBytes(canvas.toDataURL("image/jpeg", .92))
+      };
+    }
+
+    function loadImage(url) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("图片加载失败"));
+        image.src = url;
+      });
+    }
+
+    function buildPdf(images) {
+      const encoder = new TextEncoder();
+      const chunks = [];
+      const offsets = [0];
+      let length = 0;
+      let nextObject = 1;
+
+      function pushAscii(text) {
+        pushBytes(encoder.encode(text));
+      }
+
+      function pushBytes(bytes) {
+        chunks.push(bytes);
+        length += bytes.length;
+      }
+
+      function beginObject(id) {
+        offsets[id] = length;
+        pushAscii(`${id} 0 obj\n`);
+      }
+
+      pushAscii("%PDF-1.4\n");
+
+      const catalogObject = nextObject++;
+      const pagesObject = nextObject++;
+      const pageObjects = images.map(() => nextObject++);
+      const contentObjects = images.map(() => nextObject++);
+      const imageObjects = images.map(() => nextObject++);
+
+      beginObject(catalogObject);
+      pushAscii(`<< /Type /Catalog /Pages ${pagesObject} 0 R >>\nendobj\n`);
+
+      beginObject(pagesObject);
+      pushAscii(`<< /Type /Pages /Kids [${pageObjects.map(id => `${id} 0 R`).join(" ")}] /Count ${images.length} >>\nendobj\n`);
+
+      for (let i = 0; i < images.length; i++) {
+        beginObject(pageObjects[i]);
+        pushAscii(`<< /Type /Page /Parent ${pagesObject} 0 R /MediaBox [0 0 ${A4_WIDTH_PT} ${A4_HEIGHT_PT}] /Resources << /XObject << /Im0 ${imageObjects[i]} 0 R >> >> /Contents ${contentObjects[i]} 0 R >>\nendobj\n`);
+
+        const content = `q\n${A4_WIDTH_PT} 0 0 ${A4_HEIGHT_PT} 0 0 cm\n/Im0 Do\nQ\n`;
+        const contentBytes = encoder.encode(content);
+
+        beginObject(contentObjects[i]);
+        pushAscii(`<< /Length ${contentBytes.length} >>\nstream\n`);
+        pushBytes(contentBytes);
+        pushAscii("endstream\nendobj\n");
+
+        beginObject(imageObjects[i]);
+        pushAscii(`<< /Type /XObject /Subtype /Image /Width ${images[i].width} /Height ${images[i].height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${images[i].bytes.length} >>\nstream\n`);
+        pushBytes(images[i].bytes);
+        pushAscii("\nendstream\nendobj\n");
+      }
+
+      const xrefOffset = length;
+      pushAscii(`xref\n0 ${nextObject}\n0000000000 65535 f \n`);
+
+      for (let id = 1; id < nextObject; id++) {
+        pushAscii(`${String(offsets[id]).padStart(10, "0")} 00000 n \n`);
+      }
+
+      pushAscii(`trailer\n<< /Size ${nextObject} /Root ${catalogObject} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+      const output = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return output;
+    }
+
+    function dataUrlToBytes(dataUrl) {
+      const base64 = dataUrl.split(",")[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function saveBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     }
 
     function extensionOf(name) {
